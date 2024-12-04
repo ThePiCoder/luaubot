@@ -37,19 +37,41 @@ function Commands:isCooldownActive(name) return Commands[name] and tick() - Comm
 function Commands:Output(msg, r, g, b) pcall(function() Console:AppendText(`<font color="rgb({r},{g},{b})">{msg}</font>`) end) end
 function Commands:handleError(err, info) self:Output(`<font color="rgb(255,0,0)">[ERROR]: ${err}</font>` .. (info and `<font color="rgb(255,165,0)"> [INFO]: ${info}</font>` or ""), 255, 0, 0) end
 
+function Commands:sendMessage(channelId, content)
+    if Ws then
+        local message = {
+            op = 3,
+            d = {
+                content = content,
+                channel_id = channelId
+            }
+        }
+        pcall(function() Ws:Send(Info.tojson(message)) end)
+    else
+        self:handleError("WebSocket not connected.", "Failed to send message.")
+    end
+end
+
 local Ops = {
     [10] = function() pcall(function() Console:AppendText("<font color='rgb(3,252,7)'>[+] Connected to Discord Gateway.</font>") Ws:Send(Info.tojson({op = 2, d = {token = Info.token, intents = 53608447, properties = {os = "linux", browser = "roblox", device = "roblox"}})) end),
     [0] = function(data)
         if data.t == "MESSAGE_CREATE" then
-            Commands:executeCommand({author = data.d.author, userId = data.d.author.id, username = data.d.author.username, content = data.d.content})
+            Commands:executeCommand({author = data.d.author, userId = data.d.author.id, username = data.d.author.username, content = data.d.content, channelId = data.d.channel_id})
         end
     end
 }
 
 function Commands:executeCommand(cmdData)
     local cmd = self:getcommand(cmdData.content)
-    if cmd == "not found" then self:Output(`Command '${cmdData.content}' not found.`, 255, 0, 0) elseif self:isCooldownActive(cmdData.content) then self:Output("Command on cooldown. Please wait.", 255, 165, 0) else
-        pcall(function() cmd.func({author = cmdData.author, userId = cmdData.userId, username = cmdData.username, content = table.concat({select(2, cmdData.content:split(" "))}, " ")}) cmd.lastUsed = tick() end, function(err) self:handleError("Error executing command.", err) end)
+    if cmd == "not found" then 
+        self:Output(`Command '${cmdData.content}' not found.`, 255, 0, 0)
+    elseif self:isCooldownActive(cmdData.content) then 
+        self:Output("Command on cooldown. Please wait.", 255, 165, 0)
+    else
+        pcall(function() 
+            cmd.func({author = cmdData.author, userId = cmdData.userId, username = cmdData.username, content = table.concat({select(2, cmdData.content:split(" "))}, " "), channelId = cmdData.channelId})
+            cmd.lastUsed = tick()
+        end, function(err) self:handleError("Error executing command.", err) end)
     end
 end
 
@@ -64,5 +86,12 @@ function Commands:Websocket(info)
     Ws.OnClose:Connect(function() pcall(function() Console:AppendText("<font color='rgb(194,120,17)'>[~] Websocket closed, restarting...</font>") self:Websocket(info) end, function(err) self:handleError("WebSocket closed unexpectedly.", err) end) end)
     return Ws
 end
+
+-- Adding a new command that sends a message back to the channel
+Commands:addCommand("!say", function(info)
+    local response = "Hello, " .. info.username .. "!"
+    Commands:sendMessage(info.channelId, response)
+    self:Output(`Sent message: '${response}'`, 0, 255, 0)
+end)
 
 return Commands
