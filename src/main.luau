@@ -6,17 +6,40 @@ local Info = {
     tolua = function(json) return game:GetService("HttpService"):JSONDecode(json) end
 }
 
-local Window = Info.imgui:CreateWindow({Title = "Output", Size = UDim2.new(0, 620, 0, 420), Position = UDim2.new(0.5, 0, 0, 70)})
+-- Ensure imgui is loaded
+if not Info.imgui then
+    warn("Failed to load ImGui module.")
+    return
+end
+
+local Window = Info.imgui:CreateWindow({
+    Title = "Output",
+    Size = UDim2.new(0, 620, 0, 420),
+    Position = UDim2.new(0.5, 0, 0, 70)
+})
 local ConsoleTab = Window:CreateTab({Name = "Console"})
 ConsoleTab:Separator({Text = "Console"})
-local Console = ConsoleTab:Console({Text = "<font color='rgb(245, 0, 245)'>[+] Successfully started console.</font>", ReadOnly = true, LineNumbers = true, Border = false, Fill = true, Enabled = true, AutoScroll = true, RichText = true, MaxLines = 20000})
+local Console = ConsoleTab:Console({
+    Text = "<font color='rgb(245, 0, 245)'>[+] Successfully started console.</font>",
+    ReadOnly = true,
+    LineNumbers = true,
+    Border = false,
+    Fill = true,
+    Enabled = true,
+    AutoScroll = true,
+    RichText = true,
+    MaxLines = 20000
+})
 
-ConsoleTab:Row():Button({Text = "Clear", Callback = Console.Clear})
-ConsoleTab:Row():Button({Text = "Pause", Callback = function(self)
+local ButtonRow = ConsoleTab:Row()
+ButtonRow:Button({Text = "Clear", Callback = Console.Clear})
+ButtonRow:Button({Text = "Pause", Callback = function(self)
     shared.Pause = not (shared.Pause or false)
     self.Text = shared.Pause and "Paused" or "Pause"
     Console.Enabled = not shared.Pause
 end})
+ButtonRow:Fill()
+
 Window:ShowTab(ConsoleTab)
 
 local Ws, Commands = nil, {}
@@ -46,10 +69,19 @@ local Ops = {
 
 function Commands:Websocket(info)
     if info.token then Info.token = info.token end
+    if not WebSocket then
+        warn("WebSocket module is not loaded.")
+        return
+    end
+
     Ws = WebSocket.connect(Info.wsurl)
     Ws.OnMessage:Connect(function(message)
         local success, data = pcall(Info.tolua, message)
-        if success and Ops[data.op] then Ops[data.op](data) else warn(`Failed to parse JSON: {message}`) end
+        if success and Ops[data.op] then
+            Ops[data.op](data)
+        else
+            warn(`Failed to parse JSON: {message}`)
+        end
     end)
     Ws.OnClose:Connect(function()
         Console:AppendText("<font color='rgb(194, 120, 17)'>[~] WebSocket closed. Restarting...</font>")
