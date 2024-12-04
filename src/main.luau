@@ -2,96 +2,61 @@ local Info = {
     imgui = loadstring(game:HttpGet('https://github.com/depthso/Roblox-ImGUI/raw/main/ImGui.lua'))(),
     wsurl = "wss://gateway.discord.gg/?v=10&encoding=json",
     token = "",
-    tojson = game.GetService("HttpService").JSONEncode,
-    tolua = game.GetService("HttpService").JSONDecode,
+    tojson = function(tbl) return game:GetService("HttpService"):JSONEncode(tbl) end,
+    tolua = function(json) return game:GetService("HttpService"):JSONDecode(json) end
 }
 
-local Window = Info.imgui:CreateWindow({
-    Title = "Output",
-    Size = UDim2.new(0, 620, 0, 420),
-    Position = UDim2.new(0.5, 0, 0, 70)
-})
-local ConsoleTab = Window:CreateTab({ Name = "Console" })
-local Console = ConsoleTab:Console({
-    Text = `<font color="rgb(245, 0, 245)">[+] Successfully started console.</font>`,
-    ReadOnly = true, LineNumbers = true, Border = false, Fill = true, Enabled = true,
-    AutoScroll = true, RichText = true, MaxLines = 20000,
-})
-ConsoleTab:Row():Button({ Text = "Clear", Callback = Console.Clear })
-ConsoleTab:Row():Button({ Text = "Pause", Callback = function(self)
-    shared.Pause = not shared.Pause
+local Window = Info.imgui:CreateWindow({Title = "Output", Size = UDim2.new(0, 620, 0, 420), Position = UDim2.new(0.5, 0, 0, 70)})
+local ConsoleTab = Window:CreateTab({Name = "Console"})
+ConsoleTab:Separator({Text = "Console"})
+local Console = ConsoleTab:Console({Text = "<font color='rgb(245, 0, 245)'>[+] Successfully started console.</font>", ReadOnly = true, LineNumbers = true, Border = false, Fill = true, Enabled = true, AutoScroll = true, RichText = true, MaxLines = 20000})
+
+ConsoleTab:Row():Button({Text = "Clear", Callback = Console.Clear})
+ConsoleTab:Row():Button({Text = "Pause", Callback = function(self)
+    shared.Pause = not (shared.Pause or false)
     self.Text = shared.Pause and "Paused" or "Pause"
     Console.Enabled = not shared.Pause
-end })
+end})
 Window:ShowTab(ConsoleTab)
 
 local Ws, Commands = nil, {}
 
-function Commands:getcommand(content) return Commands[content:split(" ")[1]:lower()] or "not found" end
-function Commands:addCommand(name, func, opts)
-    opts = opts or {}
-    Commands[name] = { func = func, cooldown = opts.cooldown or 0, lastUsed = 0, aliases = opts.aliases or {} }
-    for _, alias in ipairs(Commands[name].aliases) do Commands[alias] = Commands[name] end
+function Commands:getcommand(content)
+    return Commands[content:split(" ")[1]] or "not found"
 end
-function Commands:isCooldownActive(name) return Commands[name] and tick() - Commands[name].lastUsed < Commands[name].cooldown end
-function Commands:Output(msg, r, g, b) pcall(function() Console:AppendText(`<font color="rgb({r},{g},{b})">{msg}</font>`) end) end
-function Commands:handleError(err, info) self:Output(`<font color="rgb(255,0,0)">[ERROR]: ${err}</font>` .. (info and `<font color="rgb(255,165,0)"> [INFO]: ${info}</font>` or ""), 255, 0, 0) end
 
-function Commands:sendMessage(channelId, content)
-    if Ws then
-        local message = {
-            op = 3,
-            d = {
-                content = content,
-                channel_id = channelId
-            }
-        }
-        pcall(function() Ws:Send(Info.tojson(message)) end)
-    else
-        self:handleError("WebSocket not connected.", "Failed to send message.")
-    end
-end
+function Commands:addCommand(name, func) Commands[name] = func end
+function Commands:not1(tab) return table.concat(tab, " ", 2) end
+function Commands:Output(message, r, g, b) Console:AppendText(`<font color="rgb(${r},${g},${b})">${message}</font>`) end
 
 local Ops = {
-    [10] = function() pcall(function() Console:AppendText("<font color='rgb(3,252,7)'>[+] Connected to Discord Gateway.</font>") Ws:Send(Info.tojson({op = 2, d = {token = Info.token, intents = 53608447, properties = {os = "linux", browser = "roblox", device = "roblox"}})) end),
+    [10] = function(data)
+        Console:AppendText("<font color='rgb(3, 252, 7)'>[+] Connected to Discord Gateway.</font>")
+        Ws:Send(Info.tojson({op = 2, d = {token = Info.token, intents = 53608447, properties = {os = "linux", browser = "roblox", device = "roblox"}}}))
+        Console:AppendText("<font color='rgb(3, 252, 7)'>[+] Payload sent.</font>")
+    end,
     [0] = function(data)
         if data.t == "MESSAGE_CREATE" then
-            Commands:executeCommand({author = data.d.author, userId = data.d.author.id, username = data.d.author.username, content = data.d.content, channelId = data.d.channel_id})
+            local author, content = data.d.author, data.d.content
+            local command = Commands:getcommand(content)
+            if type(command) ~= "string" then command({author = author, userId = author.id, username = author.username, content = Commands:not1(content:split(" "))}) end
         end
     end
 }
 
-function Commands:executeCommand(cmdData)
-    local cmd = self:getcommand(cmdData.content)
-    if cmd == "not found" then 
-        self:Output(`Command '${cmdData.content}' not found.`, 255, 0, 0)
-    elseif self:isCooldownActive(cmdData.content) then 
-        self:Output("Command on cooldown. Please wait.", 255, 165, 0)
-    else
-        pcall(function() 
-            cmd.func({author = cmdData.author, userId = cmdData.userId, username = cmdData.username, content = table.concat({select(2, cmdData.content:split(" "))}, " "), channelId = cmdData.channelId})
-            cmd.lastUsed = tick()
-        end, function(err) self:handleError("Error executing command.", err) end)
-    end
-end
-
 function Commands:Websocket(info)
     if info.token then Info.token = info.token end
     Ws = WebSocket.connect(Info.wsurl)
-    Ws.OnMessage:Connect(function(msg)
-        local success, data = pcall(Info.tolist, msg)
-        if not success then self:handleError("Failed to parse JSON message.", msg) return end
-        if Ops[data.op] then pcall(function() Ops[data.op](data) end, function(err) self:handleError("Error processing operation.", err) end) else self:handleError("Unhandled op code.", data.op) end
+    Ws.OnMessage:Connect(function(message)
+        local success, data = pcall(Info.tolua, message)
+        if success and Ops[data.op] then Ops[data.op](data) else warn(`Failed to parse JSON: {message}`) end
     end)
-    Ws.OnClose:Connect(function() pcall(function() Console:AppendText("<font color='rgb(194,120,17)'>[~] Websocket closed, restarting...</font>") self:Websocket(info) end, function(err) self:handleError("WebSocket closed unexpectedly.", err) end) end)
+    Ws.OnClose:Connect(function()
+        Console:AppendText("<font color='rgb(194, 120, 17)'>[~] WebSocket closed. Restarting...</font>")
+        Commands:Websocket(info)
+    end)
     return Ws
 end
 
--- Adding a new command that sends a message back to the channel
-Commands:addCommand("!say", function(info)
-    local response = "Hello, " .. info.username .. "!"
-    Commands:sendMessage(info.channelId, response)
-    self:Output(`Sent message: '${response}'`, 0, 255, 0)
-end)
-
+Window:Center()
 return Commands
