@@ -6,7 +6,6 @@ local Info = {
     tolua = function(json) return game:GetService("HttpService"):JSONDecode(json) end
 }
 
--- Ensure imgui is loaded
 if not Info.imgui then
     warn("Failed to load ImGui module.")
     return
@@ -17,8 +16,8 @@ local Window = Info.imgui:CreateWindow({
     Size = UDim2.new(0, 620, 0, 420),
     Position = UDim2.new(0.5, 0, 0, 70)
 })
-local ConsoleTab = Window:CreateTab({Name = "Console"})
-ConsoleTab:Separator({Text = "Console"})
+local ConsoleTab = Window:CreateTab({ Name = "Console" })
+ConsoleTab:Separator({ Text = "Console" })
 local Console = ConsoleTab:Console({
     Text = "<font color='rgb(245, 0, 245)'>[+] Successfully started console.</font>",
     ReadOnly = true,
@@ -32,12 +31,12 @@ local Console = ConsoleTab:Console({
 })
 
 local ButtonRow = ConsoleTab:Row()
-ButtonRow:Button({Text = "Clear", Callback = Console.Clear})
-ButtonRow:Button({Text = "Pause", Callback = function(self)
+ButtonRow:Button({ Text = "Clear", Callback = Console.Clear })
+ButtonRow:Button({ Text = "Pause", Callback = function(self)
     shared.Pause = not (shared.Pause or false)
     self.Text = shared.Pause and "Paused" or "Pause"
     Console.Enabled = not shared.Pause
-end})
+end })
 ButtonRow:Fill()
 
 Window:ShowTab(ConsoleTab)
@@ -55,14 +54,21 @@ function Commands:Output(message, r, g, b) Console:AppendText(`<font color="rgb(
 local Ops = {
     [10] = function(data)
         Console:AppendText("<font color='rgb(3, 252, 7)'>[+] Connected to Discord Gateway.</font>")
-        Ws:Send(Info.tojson({op = 2, d = {token = Info.token, intents = 53608447, properties = {os = "linux", browser = "roblox", device = "roblox"}}}))
+        Ws:Send(Info.tojson({
+            op = 2,
+            d = {
+                token = Info.token,
+                intents = 53608447,
+                properties = { os = "linux", browser = "roblox", device = "roblox" }
+            }
+        }))
         Console:AppendText("<font color='rgb(3, 252, 7)'>[+] Payload sent.</font>")
     end,
     [0] = function(data)
         if data.t == "MESSAGE_CREATE" then
             local author, content = data.d.author, data.d.content
             local command = Commands:getcommand(content)
-            if type(command) ~= "string" then command({author = author, userId = author.id, username = author.username, content = Commands:not1(content:split(" "))}) end
+            if type(command) ~= "string" then command({ author = author, userId = author.id, username = author.username, content = Commands:not1(content:split(" ")) }) end
         end
     end
 }
