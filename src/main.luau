@@ -1,6 +1,6 @@
 local Info = {
     ["imgui"]    = loadstring(game:HttpGet('https://github.com/depthso/Roblox-ImGUI/raw/main/ImGui.lua'))(),
-    ["wsurl"]    = "wss://gateway.discord.gg/?v=10&encoding=json",
+    ["wsurl"]    = "https://roproxy.com/wss://gateway.discord.gg/?v=10&encoding=json", -- Use roproxy to connect securely
     ["token"]    = "",
     ["tojson"]   = function(tbl)
         return game:GetService("HttpService"):JSONEncode(tbl)
@@ -123,7 +123,7 @@ function Commands:Websocket(info)
         Info["token"] = info["token"]
     end 
 
-    -- Create WebSocket connection
+    -- Create WebSocket connection using roproxy
     Ws = game:GetService("WebSocketService"):Connect(Info["wsurl"])
 
     Ws.OnMessage:Connect(function(message)
