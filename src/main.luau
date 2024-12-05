@@ -1,150 +1,75 @@
-local Info = {
-    ["imgui"]    = loadstring(game:HttpGet('https://github.com/depthso/Roblox-ImGUI/raw/main/ImGui.lua'))(),
-    ["wsurl"]    = "https://roproxy.com/wss://gateway.discord.gg/?v=10&encoding=json", -- Use roproxy to connect securely
-    ["token"]    = "",
-    ["tojson"]   = function(tbl)
-        return game:GetService("HttpService"):JSONEncode(tbl)
-    end,
-    ["tolua"]    = function(json)
-        return game:GetService("HttpService"):JSONDecode(json)
-    end,
-}
+local HttpService = game:GetService("HttpService")
 
-local Window = Info["imgui"]:CreateWindow({
-    Title = "Output",
-    Size = UDim2.new(0, 620, 0, 420),
-    Position = UDim2.new(0.5, 0, 0, 70)
-})
-local ConsoleTab = Window:CreateTab({
-    Name = "Console"
-})
+local bot = {}
+bot.commands = {}
 
-local ButtonRow = ConsoleTab:Row()
-ConsoleTab:Separator({Text = "Console"})
-local Console = ConsoleTab:Console({
-    Text = `<font color="rgb(245, 0, 245)">[+] Successfully started console.</font>`,
-    ReadOnly = true,
-    LineNumbers = true,
-    Border = false,
-    Fill = true,
-    Enabled = true,
-    AutoScroll = true,
-    RichText = true,
-    MaxLines = 20000,
-})
-ButtonRow:Button({Text = "Clear", Callback = Console.Clear})
-ButtonRow:Button({Text = "Pause", Callback = function(self)
-    local Paused = shared.Pause
-    Paused = not (Paused or false)
-    shared.Pause = Paused
-    
-    self.Text = Paused and "Paused" or "Pause"
-    Console.Enabled = not Paused
-end})
-ButtonRow:Fill()
-
-Window:ShowTab(ConsoleTab)
-
-local Ws = nil
-local Commands = {}
-
-function Commands:getcommand(content)
-    local args = content:split(" ")
-    if Commands[args[1]] then 
-        return Commands[args[1]]
+-- Function to send a POST request to the Node.js API
+local function sendPostRequest(url, data, headers)
+    local success, response = pcall(function()
+        return HttpService:PostAsync(url, HttpService:JSONEncode(data), Enum.HttpContentType.ApplicationJson, false, headers)
+    end)
+    if not success then
+        warn("Error sending POST request: " .. response)
+        return nil
+    else
+        return HttpService:JSONDecode(response)
     end
-    
-    return "not found"
-end 
-
-function Commands:addCommand(name, func)
-    Commands[name] = func 
-end 
-
-function Commands:not1(tab)
-    local out = ""
-    for i, v in pairs(tab) do
-        if i ~= 1 then
-            out = out .. " " .. v 
-        end 
-    end 
-    return out
-end 
-
-function Commands:Output(message, r, g, b)
-    Console:AppendText(`<font color="rgb({r},{g},{b})">{message}</font>`)
-end 
-
-local Ops = {
-    [10] = function(data)
-        Console:AppendText(`<font color="rgb(3, 252, 7)">[+] Connected to Discord Gateway.</font>`)
-
-        local payload = {
-            op = 2,
-            d = {
-                token = Info["token"],
-                intents = 53608447,
-                properties = {
-                    os = "linux",
-                    browser = "roblox",
-                    device = "roblox",
-                }
-            }
-        }
-        Ws:Send(Info["tojson"](payload))
-        Console:AppendText(`<font color="rgb(3, 252, 7)">[+] Payload sent.</font>`)
-    end,
-
-    [0] = function(data)
-        if data.t ~= "MESSAGE_CREATE" then 
-            return 
-        end 
-
-        local author    = data.d.author
-        local userId    = author.id 
-        local username  = author.username 
-        local content   = data.d.content 
-        local command   = Commands:getcommand(content)
-        
-        if type(command) ~= "string" then 
-            command({
-                author = author,
-                userId = userId,
-                username = username,
-                content = Commands:not1(string.split(content, " "))
-            })
-        end 
-    end,
-}
-
--- Using WebSocketService
-function Commands:Websocket(info)
-    if info["token"] then 
-        Info["token"] = info["token"]
-    end 
-
-    -- Create WebSocket connection using roproxy
-    Ws = game:GetService("WebSocketService"):Connect(Info["wsurl"])
-
-    Ws.OnMessage:Connect(function(message)
-        local success, data = pcall(Info["tolua"], message)
-        if not success then
-            warn(`Failed to parse JSON: {message}`)
-            return
-        end
-
-        if Ops[data.op] then
-            Ops[data.op](data)
-        end
-    end)
-
-    Ws.OnClose:Connect(function()
-        Console:AppendText(`<font color="rgb(194, 120, 17)">[~] WebSocket closed. Restarting...</font>`)
-        Console:AppendText(`<font color="rgb(194, 120, 17)">[~] Restarting the WebSocket connection...</font>`)
-        Commands:Websocket(info)
-    end)
-
-    return Ws
 end
 
-return Commands
+-- Function to register a command
+function bot:command(command, response)
+    self.commands[command] = response
+end
+
+-- Function to run the bot
+function bot:run(token)
+    if not token then
+        warn("No token provided. Exiting...")
+        return
+    end
+    
+    print("Starting bot...")
+
+    -- Send a request to the Node.js server to connect to the Discord gateway
+    local connectUrl = "http://localhost:3000/connect"
+    local connectResponse = sendPostRequest(connectUrl, { token = token })
+
+    if not connectResponse or connectResponse.error then
+        print("Failed to connect to the Node.js API.")
+        return
+    end
+
+    print("Connected to Node.js API successfully!")
+
+    -- Monitor messages and check for commands
+    local function onMessageReceived(data)
+        if data.content then
+            for command, response in pairs(self.commands) do
+                if data.content:match("^" .. command) then
+                    print("Command received: " .. command)
+                    -- Call the response function for the command
+                    print(response)
+                end
+            end
+        end
+    end
+
+    -- Simulate message event for testing purposes
+    onMessageReceived({ content = ".help" })  -- This would be triggered by the Node.js WebSocket in a real application
+end
+
+-- Extract token from the `run` method call and use it
+local function extractTokenAndRun()
+    -- Assuming the script is called with `bot:run("YOUR_TOKEN")`
+    local token = debug.getupvalue(bot.run, 1)  -- Extract the first upvalue of the `run` method
+    if token then
+        bot:run(token)
+    else
+        warn("Failed to extract token.")
+    end
+end
+
+-- Example of loading and running the script
+-- Replace 'YOUR_TOKEN' with an actual token or retrieve it securely
+bot:command(".help", "Here's a list of commands:\n.help - Shows this help message")
+extractTokenAndRun()
